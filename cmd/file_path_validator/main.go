@@ -84,6 +84,7 @@ func validatePath(path string, validateFunction func(string) bool) {
 
 		if !validateFunction(folderName) {
 			fmt.Printf("Invalid folder name: %s\nPath: %s\n", folderName, path)
+
 			isAnyFolderInvalid = true
 		}
 	}
