@@ -1,0 +1,218 @@
+name: "New changes validation"
+
+on:
+    pull_request:  # yamllint disable-line rule:empty-values
+
+permissions:
+    contents: "read"
+    packages: "read"
+
+env:
+    REGISTRY: "ghcr.io"
+    IMAGE_NAME: "articola-tools/file-path-validator"
+
+jobs:
+    find-changed-files:
+        runs-on: "ubuntu-latest"
+        outputs:
+            is_yaml_changed: "${{ steps.filter.outputs.yaml }}"
+            is_dockerfile_changed: "${{ steps.filter.outputs.dockerfile }}"
+            is_validator_image_changed: "${{ steps.filter.outputs.validator-image }}"
+            is_go_changed: "${{ steps.filter.outputs.go }}"
+            is_markdown_changed: "${{ steps.filter.outputs.markdown }}"
+        permissions:
+            pull-requests: "read"
+        steps:
+            - name: "Checkout ${{ github.event.repository.name }}"
+              uses: "actions/checkout@v4"
+              with:
+                  fetch-depth: 1
+
+            - name: "Find changed files"
+              uses: "dorny/paths-filter@v3"
+              id: "filter"
+              with:
+                  filters: |
+                      yaml:
+                      - "**/*.yaml"
+                      - "**/*.yml"
+                      dockerfile:
+                      - "**/Dockerfile"
+                      validator-image:
+                      - "**/Dockerfile"
+                      - "**/.dockerignore"
+                      - "**/*.go"
+                      go:
+                      - "**/*.go"
+                      markdown:
+                      - "**/*.md"
+
+    validate-file-path-validator-image:
+        runs-on: "ubuntu-latest"
+        needs: "find-changed-files"
+        if: "${{ needs.find-changed-files.outputs.is_validator_image_changed == 'true' }}"
+
+        # NOTE: building and running Docker image of file path validator take around 1 minute.
+        # If this job takes more than 5 minutes, it means that something is wrong.
+        timeout-minutes: 5
+        steps:
+            - name: "Checkout ${{ github.event.repository.name }}"
+              uses: "actions/checkout@v4"
+
+            - name: "Set up Docker Buildx"
+              uses: "docker/setup-buildx-action@v3"
+
+            - name: "Login to Docker registry"
+              uses: "docker/login-action@v3"
+              with:
+                  registry: "${{ env.REGISTRY }}"
+                  username: "${{ github.actor }}"
+                  password: "${{ secrets.GITHUB_TOKEN }}"
+
+            - name: "Build file path validator Docker image"
+              uses: "docker/build-push-action@v6"
+              with:
+                  push: false
+                  load: true
+
+                  # NOTE: using another name to don't allow docker to download image from the internet in the next step.
+                  tags: "local/file-path-validator-pr:latest"
+                  cache-from: "type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+                  cache-to: "type=inline"
+
+            - name: "Check correct snake_case file paths"
+              run: |
+                  while IFS= read -r file_path; do
+                  docker run --rm local/file-path-validator-pr:latest \
+                  --naming-convention snake_case --path-to-validate "$file_path";
+                  done < ${{ github.workspace }}/tests/correct_snake_case_file_paths.txt
+
+            - name: "Check incorrect snake_case file paths"
+              run: |
+                  while IFS= read -r file_path; do
+                  if docker run --rm local/file-path-validator-pr:latest \
+                  --naming-convention snake_case --path-to-validate "$file_path"; then
+                  echo "Validation unexpectedly succeeded for file path '$file_path'!" >&2
+                  exit 1
+                  fi
+                  done < ${{ github.workspace }}/tests/incorrect_snake_case_file_paths.txt
+
+            - name: "Check correct PascalCase file paths"
+              run: |
+                  while IFS= read -r file_path; do
+                  docker run --rm local/file-path-validator-pr:latest \
+                  --naming-convention PascalCase --path-to-validate "$file_path";
+                  done < ${{ github.workspace }}/tests/correct_pascal_case_file_paths.txt
+
+            - name: "Check incorrect PascalCase file paths"
+              run: |
+                  while IFS= read -r file_path; do
+                  if docker run --rm local/file-path-validator-pr:latest \
+                  --naming-convention PascalCase --path-to-validate "$file_path"; then
+                  echo "Validation unexpectedly succeeded for file path '$file_path'!" >&2
+                  exit 1
+                  fi
+                  done < ${{ github.workspace }}/tests/incorrect_pascal_case_file_paths.txt
+
+            - name: "Run Dockerfile security scanner"
+              run: "docker run --rm --group-add $(getent group docker | cut -d: -f3)
+                    -v /var/run/docker.sock:/var/run/docker.sock
+                    ghcr.io/articola-tools/dockerfile-security-scanner local/file-path-validator-pr:latest"
+
+    validate-dockerfile-changes:
+        runs-on: "ubuntu-latest"
+        needs: "find-changed-files"
+        if: "${{ needs.find-changed-files.outputs.is_dockerfile_changed == 'true' }}"
+
+        # NOTE: validating Dockerfile changes takes around 1 minute.
+        # If this job takes more than 5 minutes, it means that something is wrong.
+        timeout-minutes: 5
+        steps:
+            - name: "Checkout ${{ github.event.repository.name }}"
+              uses: "actions/checkout@v4"
+
+            - name: "Login to Docker registry"
+              uses: "docker/login-action@v3"
+              with:
+                  registry: "${{ env.REGISTRY }}"
+                  username: "${{ github.actor }}"
+                  password: "${{ secrets.GITHUB_TOKEN }}"
+
+            - name: "Run Dockerfile linter"
+              run: "docker run --rm -v ${{ github.workspace }}:/linter_workdir/repo
+                    ${{ env.REGISTRY }}/articola-tools/dockerfile-linter:latest"
+
+    validate-yaml-changes:
+        runs-on: "ubuntu-latest"
+        needs: "find-changed-files"
+
+        if: "${{ needs.find-changed-files.outputs.is_yaml_changed == 'true' }}"
+
+        # NOTE: validating YAML changes takes around 1 minute.
+        # If this job takes more than 5 minutes, it means that something is wrong.
+        timeout-minutes: 5
+        steps:
+            - name: "Checkout ${{ github.event.repository.name }}"
+              uses: "actions/checkout@v4"
+
+            - name: "Login to Docker registry"
+              uses: "docker/login-action@v3"
+              with:
+                  registry: "${{ env.REGISTRY }}"
+                  username: "${{ github.actor }}"
+                  password: "${{ secrets.GITHUB_TOKEN }}"
+
+            - name: "Run YAML linter"
+              run: "docker run --rm -v ${{ github.workspace }}:/linter_workdir/repo
+                    ${{ env.REGISTRY }}/articola-tools/yaml-linter:latest"
+
+    validate-markdown-changes:
+        runs-on: "ubuntu-latest"
+        needs: "find-changed-files"
+        if: "${{ needs.find-changed-files.outputs.is_markdown_changed == 'true' }}"
+
+        # NOTE: validating Markdown changes takes around 1 minute.
+        # If this job takes more than 5 minutes, it means that something is wrong.
+        timeout-minutes: 5
+        steps:
+            - name: "Checkout ${{ github.event.repository.name }}"
+              uses: "actions/checkout@v4"
+
+            - name: "Login to Docker registry"
+              uses: "docker/login-action@v3"
+              with:
+                  registry: "${{ env.REGISTRY }}"
+                  username: "${{ github.actor }}"
+                  password: "${{ secrets.GITHUB_TOKEN }}"
+
+            - name: "Run Dockerfile linter"
+              run: "docker run --rm -v ${{ github.workspace }}:/linter_workdir/repo
+                    ${{ env.REGISTRY }}/articola-tools/markdown-linter:latest"
+
+    validate-go-changes:
+        runs-on: "ubuntu-latest"
+        needs: "find-changed-files"
+        if: "${{ needs.find-changed-files.outputs.is_go_changed == 'true' }}"
+
+        # NOTE: validating Go changes takes around 1 minute.
+        # If this job takes more than 5 minutes, it means that something is wrong.
+        timeout-minutes: 5
+        steps:
+            - name: "Checkout ${{ github.event.repository.name }}"
+              uses: "actions/checkout@v4"
+
+            - name: "Build code"
+              run: "go build -ldflags \"-s -w\" -o file_path_validator ./cmd/file_path_validator/"
+
+            - name: "Run unit tests"
+              run: "go test ./..."
+
+            - name: "Login to Docker registry"
+              uses: "docker/login-action@v3"
+              with:
+                  registry: "${{ env.REGISTRY }}"
+                  username: "${{ github.actor }}"
+                  password: "${{ secrets.GITHUB_TOKEN }}"
+
+            - name: "Run linter"
+              run: "docker run --rm -v ./:/linter_workdir ghcr.io/articola-tools/go-linter:latest"
