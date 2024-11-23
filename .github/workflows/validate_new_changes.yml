@@ -202,7 +202,7 @@ jobs:
               uses: "actions/checkout@v4"
 
             - name: "Build code"
-              run: "go build -ldflags \"-s -w\" -o pr_name_validator ./cmd/pr_name_validator/"
+              run: "go build -ldflags \"-s -w\" -o file_path_validator ./cmd/file_path_validator/"
 
             - name: "Run unit tests"
               run: "go test ./..."
