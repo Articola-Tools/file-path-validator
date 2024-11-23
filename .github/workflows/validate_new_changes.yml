@@ -20,6 +20,8 @@ jobs:
             is_validator_image_changed: "${{ steps.filter.outputs.validator-image }}"
             is_go_changed: "${{ steps.filter.outputs.go }}"
             is_markdown_changed: "${{ steps.filter.outputs.markdown }}"
+            changed_or_added_files: "${{ steps.filter.outputs.changed-or-added-files }}"
+            changed_or_added_files_list: "${{ steps.filter.outputs.changed-or-added-files_files }}"
         permissions:
             pull-requests: "read"
         steps:
@@ -32,6 +34,8 @@ jobs:
               uses: "dorny/paths-filter@v3"
               id: "filter"
               with:
+                  list-files: "shell"
+
                   filters: |
                       yaml:
                       - "**/*.yaml"
@@ -46,6 +50,8 @@ jobs:
                       - "**/*.go"
                       markdown:
                       - "**/*.md"
+                      changed-or-added-files:
+                      - added|modified: '**'
 
     validate-file-path-validator-image:
         runs-on: "ubuntu-latest"
@@ -216,3 +222,21 @@ jobs:
 
             - name: "Run linter"
               run: "docker run --rm -v ./:/linter_workdir ghcr.io/articola-tools/go-linter:latest"
+
+    validate-file-paths:
+        runs-on: "ubuntu-latest"
+        needs: "find-changed-files"
+        if: "${{ needs.find-changed-files.outputs.changed_or_added_files == 'true' }}"
+
+        # NOTE: validating file paths takes around 1 minute.
+        # If this job takes more than 5 minutes, it means that something is wrong.
+        timeout-minutes: 5
+        steps:
+            - name: "Validate file paths"
+              run: |
+                  for path in ${{ needs.find-changed-files.outputs.changed_or_added_files_list }}; do
+                  echo "Validating file path '$path'..."
+
+                  docker run --rm ghcr.io/articola-tools/file-path-validator \
+                  --naming-convention snake_case --path-to-validate "$path";
+                  done
