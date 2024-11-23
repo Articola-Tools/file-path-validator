@@ -76,21 +76,19 @@ func validatePath(path string, validateFunction func(string) bool) {
 	}
 
 	folders := processor.GetFoldersFromPath(path)
-	is_any_folder_invalid := false
+	isAnyFolderInvalid := false
 
 	for _, folderName := range folders {
 		// NOTE: remove hidden prefix from folder name to validate it correctly
-		if strings.HasPrefix(folderName, ".") {
-			folderName = strings.TrimPrefix(folderName, ".")
-		}
+		folderName = strings.TrimPrefix(folderName, ".")
 
 		if !validateFunction(folderName) {
 			fmt.Printf("Invalid folder name: %s\nPath: %s\n", folderName, path)
-            is_any_folder_invalid = true
+			isAnyFolderInvalid = true
 		}
 	}
 
-    if is_any_folder_invalid {
-        os.Exit(1)
-    }
+	if isAnyFolderInvalid {
+		os.Exit(1)
+	}
 }
