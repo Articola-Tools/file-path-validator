@@ -235,8 +235,11 @@ jobs:
             - name: "Validate file paths"
               run: |
                   for path in ${{ needs.find-changed-files.outputs.changed_or_added_files_list }}; do
-                  echo "Validating file path '$path'..."
 
+                  # Note: ignore `.idea` folder because it's generated. Ignore files with special names.
+
+                  if [[ "$path" != .idea* && "$path" != *Dockerfile && "$path" != *README.md && "$path" != *LICENSE ]]; then
                   docker run --rm ghcr.io/articola-tools/file-path-validator \
                   --naming-convention snake_case --path-to-validate "$path";
+                  fi
                   done
