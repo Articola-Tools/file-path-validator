@@ -120,6 +120,21 @@ jobs:
                   fi
                   done < ${{ github.workspace }}/tests/incorrect_pascal_case_file_paths.txt
 
+            - name: "Validate files in repo directory"
+              run: |
+                  for path in $(find . -type f); do
+
+                  # NOTE: ignore `.idea` folder because it's generated.
+                  # NOTE: ignore files with special names.
+                  # NOTE: ignore `.git` folder because it's generated.
+
+                  if [[ "$path" != ./.idea* && "$path" != ./.git* && "$path" != *Dockerfile && "$path" != *README.md
+                  && "$path" != *LICENSE ]]; then
+                  docker run --rm local/file-path-validator-pr:latest \
+                  --naming-convention snake_case --path-to-validate "$path";
+                  fi
+                  done
+
             - name: "Run Dockerfile security scanner"
               run: "docker run --rm --group-add $(getent group docker | cut -d: -f3)
                     -v /var/run/docker.sock:/var/run/docker.sock
