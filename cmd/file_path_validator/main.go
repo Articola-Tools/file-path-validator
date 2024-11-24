@@ -64,6 +64,8 @@ func getValidateFunction(namingConvention string) func(string) bool {
 }
 
 func validatePath(path string, validateFunction func(string) bool) {
+    fmt.Printf("Validating path: %s\n", path)
+
 	if processor.IsHiddenFile(path) {
 		return
 	}
