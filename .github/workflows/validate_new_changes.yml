@@ -138,7 +138,7 @@ jobs:
             - name: "Run Dockerfile security scanner"
               run: "docker run --rm --group-add $(getent group docker | cut -d: -f3)
                     -v /var/run/docker.sock:/var/run/docker.sock
-                    ghcr.io/articola-tools/dockerfile-security-scanner local/file-path-validator-pr:latest"
+                    ${{ env.REGISTRY }}/articola-tools/dockerfile-security-scanner local/file-path-validator-pr:latest"
 
     validate-dockerfile-changes:
         runs-on: "ubuntu-latest"
@@ -250,7 +250,7 @@ jobs:
                   password: "${{ secrets.GITHUB_TOKEN }}"
 
             - name: "Run linter"
-              run: "docker run --rm -v ./:/linter_workdir ghcr.io/articola-tools/go-linter:latest"
+              run: "docker run --rm -v ./:/linter_workdir ${{ env.REGISTRY }}/articola-tools/go-linter:latest"
 
     validate-file-paths:
         runs-on: "ubuntu-latest"
@@ -275,7 +275,7 @@ jobs:
                   # NOTE: ignore `.idea` folder because it's generated. Ignore files with special names.
 
                   if [[ "$path" != .idea* && "$path" != *Dockerfile && "$path" != *README.md && "$path" != *LICENSE ]]; then
-                  docker run --rm ghcr.io/articola-tools/file-path-validator \
+                  docker run --rm ${{ env.REGISTRY }}/articola-tools/file-path-validator \
                   --naming-convention snake_case --path-to-validate "$path";
                   fi
                   done
