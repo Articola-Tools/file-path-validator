@@ -4,7 +4,7 @@ COPY ./ /file-path-validator
 
 WORKDIR /file-path-validator
 
-RUN go mod download && go build -ldflags "-s -w" -o file_path_validator ./cmd/file_path_validator/
+RUN go mod download && go build -o file_path_validator ./cmd/file_path_validator/
 
 
 FROM gcr.io/distroless/static-debian12:nonroot-8701094b7fe8ff30d0777bbdfcc9a65caff6f40b
