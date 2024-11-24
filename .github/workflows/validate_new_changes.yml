@@ -20,6 +20,8 @@ jobs:
             is_validator_image_changed: "${{ steps.filter.outputs.validator-image }}"
             is_go_changed: "${{ steps.filter.outputs.go }}"
             is_markdown_changed: "${{ steps.filter.outputs.markdown }}"
+            changed_or_added_files: "${{ steps.filter.outputs.changed-or-added-files }}"
+            changed_or_added_files_list: "${{ steps.filter.outputs.changed-or-added-files_files }}"
         permissions:
             pull-requests: "read"
         steps:
@@ -32,6 +34,8 @@ jobs:
               uses: "dorny/paths-filter@v3"
               id: "filter"
               with:
+                  list-files: "shell"
+
                   filters: |
                       yaml:
                       - "**/*.yaml"
@@ -46,6 +50,8 @@ jobs:
                       - "**/*.go"
                       markdown:
                       - "**/*.md"
+                      changed-or-added-files:
+                      - added|modified: '**'
 
     validate-file-path-validator-image:
         runs-on: "ubuntu-latest"
@@ -114,10 +120,25 @@ jobs:
                   fi
                   done < ${{ github.workspace }}/tests/incorrect_pascal_case_file_paths.txt
 
+            - name: "Validate files in repo directory"
+              run: |
+                  for path in $(find . -type f); do
+
+                  # NOTE: ignore `.idea` folder because it's generated.
+                  # NOTE: ignore files with special names.
+                  # NOTE: ignore `.git` folder because it's generated.
+
+                  if [[ "$path" != ./.idea* && "$path" != ./.git* && "$path" != *Dockerfile && "$path" != *README.md
+                  && "$path" != *LICENSE ]]; then
+                  docker run --rm local/file-path-validator-pr:latest \
+                  --naming-convention snake_case --path-to-validate "$path";
+                  fi
+                  done
+
             - name: "Run Dockerfile security scanner"
               run: "docker run --rm --group-add $(getent group docker | cut -d: -f3)
                     -v /var/run/docker.sock:/var/run/docker.sock
-                    ghcr.io/articola-tools/dockerfile-security-scanner local/file-path-validator-pr:latest"
+                    ${{ env.REGISTRY }}/articola-tools/dockerfile-security-scanner local/file-path-validator-pr:latest"
 
     validate-dockerfile-changes:
         runs-on: "ubuntu-latest"
@@ -207,6 +228,20 @@ jobs:
             - name: "Run unit tests"
               run: "go test ./..."
 
+            - name: "Validate files in repo directory"
+              run: |
+                  for path in $(find . -type f); do
+
+                  # NOTE: ignore `.idea` folder because it's generated.
+                  # NOTE: ignore files with special names.
+                  # NOTE: ignore `.git` folder because it's generated.
+
+                  if [[ "$path" != ./.idea* && "$path" != ./.git* && "$path" != *Dockerfile && "$path" != *README.md
+                  && "$path" != *LICENSE ]]; then
+                  ./file_path_validator --naming-convention snake_case --path-to-validate "$path";
+                  fi
+                  done
+
             - name: "Login to Docker registry"
               uses: "docker/login-action@v3"
               with:
@@ -215,4 +250,32 @@ jobs:
                   password: "${{ secrets.GITHUB_TOKEN }}"
 
             - name: "Run linter"
-              run: "docker run --rm -v ./:/linter_workdir ghcr.io/articola-tools/go-linter:latest"
+              run: "docker run --rm -v ./:/linter_workdir ${{ env.REGISTRY }}/articola-tools/go-linter:latest"
+
+    validate-file-paths:
+        runs-on: "ubuntu-latest"
+        needs: "find-changed-files"
+
+        # NOTE: do not run this job when `is_validator_image_changed` or `is_go_changed` is true, because this job validates
+        # file paths changes with the latest released file-path-validator image, and new changes in file-path-validator image
+        # or Go code can introduce false positives for this job (since changes in file-path-validator or Go code can change
+        # how file paths are validated).
+        if: "${{ needs.find-changed-files.outputs.changed_or_added_files == 'true'
+             && needs.find-changed-files.outputs.is_validator_image_changed == 'false'
+             && needs.find-changed-files.outputs.is_go_changed == 'false' }}"
+
+        # NOTE: validating file paths takes around 1 minute.
+        # If this job takes more than 5 minutes, it means that something is wrong.
+        timeout-minutes: 5
+        steps:
+            - name: "Validate file paths"
+              run: |
+                  for path in ${{ needs.find-changed-files.outputs.changed_or_added_files_list }}; do
+
+                  # NOTE: ignore `.idea` folder because it's generated. Ignore files with special names.
+
+                  if [[ "$path" != .idea* && "$path" != *Dockerfile && "$path" != *README.md && "$path" != *LICENSE ]]; then
+                  docker run --rm ${{ env.REGISTRY }}/articola-tools/file-path-validator \
+                  --naming-convention snake_case --path-to-validate "$path";
+                  fi
+                  done

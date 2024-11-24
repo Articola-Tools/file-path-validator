@@ -6,6 +6,7 @@ This repo contains Dockerfile with preconfigured file paths validator written in
 Go. The validator allows validating a file, and all folders in the provided
 path are stick to the same naming convention. Currently, validator supports two
 naming conventions - `snake_case` and `PascalCase`.
+
 This linter is used in Articola Tools organization's repositories to validate
 new files in PRs.
 
