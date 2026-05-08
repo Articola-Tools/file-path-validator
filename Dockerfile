@@ -1,4 +1,4 @@
-FROM golang:1.26.1 AS build
+FROM golang:1.26.3 AS build
 
 COPY ./ /file-path-validator
 
